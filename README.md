@@ -4,6 +4,8 @@ A web-based tool to clone and backup Raspberry Pi SD cards via SSH — with auto
 
 **DE:** Web-Tool zum Klonen und Backup von Raspberry Pi SD-Karten via SSH — mit automatischen Wochenplänen, Boot-Partition Auto-Fix und einer übersichtlichen Browser-Oberfläche.
 
+![rpi-image-cloner Screenshot](screenshots/preview.png)
+
 ---
 
 ## ✨ Features
