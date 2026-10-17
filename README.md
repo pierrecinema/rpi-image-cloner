@@ -81,29 +81,144 @@ Open **http://localhost:8099** in your browser.
 
 ---
 
-## 📋 Requirements
+## 📋 Step-by-step Setup Guide
 
-### On the host running rpi-image-cloner
-- Docker
+### Step 1 — Enable SSH on your Raspberry Pi
 
-### On each Raspberry Pi to back up
-- SSH enabled
-- A backup SD card inserted (USB adapter or second card slot)
-- [rpi-clone](https://github.com/billw2/rpi-clone) installed:
+If SSH is not already enabled:
 
 ```bash
-sudo wget https://raw.githubusercontent.com/billw2/rpi-clone/master/rpi-clone -O /usr/local/sbin/rpi-clone
-sudo chmod +x /usr/local/sbin/rpi-clone
+sudo raspi-config
+# → Interface Options → SSH → Enable
+```
+
+Or create an empty `ssh` file in the boot partition before first boot:
+
+```bash
+touch /boot/ssh
 ```
 
 ---
 
-## ⚙️ Configuration
+### Step 2 — Install rpi-clone on each Raspberry Pi
 
-1. Open the web UI at `http://<your-host>:8099`
-2. Add a Raspberry Pi with IP, SSH user and password
-3. Insert a backup SD card into the Pi (USB adapter)
-4. Click **Backup now** or set a weekly schedule
+SSH into your Pi and run:
+
+```bash
+sudo wget https://raw.githubusercontent.com/billw2/rpi-clone/master/rpi-clone \
+     -O /usr/local/sbin/rpi-clone
+sudo chmod +x /usr/local/sbin/rpi-clone
+```
+
+Verify it works:
+
+```bash
+sudo rpi-clone --help
+```
+
+---
+
+### Step 3 — Insert a backup SD card into the Pi
+
+- Use a USB SD card adapter plugged into the Pi
+- The backup card should be at least as large as the used space on your main card (does not need to be the same size)
+- The card will appear as `/dev/sda` — verify with `lsblk`
+
+```bash
+lsblk
+# You should see:
+# mmcblk0   (your running SD card)
+# sda       (your backup SD card via USB)
+```
+
+> ⚠️ All data on the backup card will be overwritten during the first backup.
+
+---
+
+### Step 4 — Deploy rpi-image-cloner with Docker
+
+**Option A — docker-compose (recommended)**
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  rpi-image-cloner:
+    image: rpi-image-cloner:latest
+    container_name: rpi-image-cloner
+    ports:
+      - "8099:8000"
+    volumes:
+      - rpi_cloner_data:/app/data
+    environment:
+      - TZ=Europe/Zurich      # ← Change to your timezone
+    restart: unless-stopped
+
+volumes:
+  rpi_cloner_data:
+```
+
+Build and start:
+
+```bash
+git clone https://github.com/pierrecinema/rpi-image-cloner.git
+cd rpi-image-cloner
+docker build -t rpi-image-cloner:latest .
+docker compose up -d
+```
+
+**Option B — Portainer Stack**
+
+1. Open Portainer → Stacks → Add Stack
+2. Paste the `docker-compose.yml` above
+3. Click **Deploy the stack**
+
+---
+
+### Step 5 — Open the web UI
+
+Open **http://\<your-docker-host\>:8099** in your browser.
+
+---
+
+### Step 6 — Add your Raspberry Pi
+
+1. Click **+ Pi hinzufügen** (Add Pi)
+2. Enter a name, the Pi's IP address, SSH username and password
+3. The device field defaults to `/dev/sda` — change only if your backup card appears elsewhere
+
+---
+
+### Step 7 — Run your first backup
+
+1. Select your Pi from the sidebar
+2. Click **Live** → **Backup starten**
+3. Watch the live log and progress bar
+4. When done, the backup card is fully bootable — no manual steps needed
+
+---
+
+### Step 8 — Set a weekly schedule (optional)
+
+1. In the **Zeitplan** section, check **Automatisches Backup aktivieren**
+2. Select the weekday and time
+3. Click **Zeitplan speichern**
+
+The backup will now run automatically every week at the chosen time.
+
+---
+
+## ⚙️ Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Backup card not detected | Run `lsblk` on the Pi — if no `sda`, the USB adapter is not connected |
+| SSH connection refused | Make sure SSH is enabled on the Pi (`sudo systemctl status ssh`) |
+| rpi-clone not found | Repeat Step 2 — verify with `which rpi-clone` |
+| `/mnt/clone` busy error | A previous backup is still running — wait or reboot the Pi |
+| Backup card not booting | Run a new backup — the auto-fix will repair `cmdline.txt` and `fstab` |
 
 ---
 
