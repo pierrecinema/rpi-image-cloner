@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raspberry Pi Image Cloner</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #0f1117; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+.sidebar { width: 240px; background: #13151f; border-right: 1px solid #1e2132; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-head { padding: 18px 16px 14px; border-bottom: 1px solid #1e2132; }
+.sidebar-head h1 { font-size: 13px; font-weight: 700; color: #7c8cff; letter-spacing: 0.3px; }
+.sidebar-head p { font-size: 11px; color: #555; margin-top: 2px; }
+.pi-list { flex: 1; overflow-y: auto; padding: 6px; }
+.pi-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; display: flex; align-items: center; gap: 10px; border: 1px solid transparent; transition: all 0.15s; }
+.pi-item:hover { background: #1a1d2e; }
+.pi-item.active { background: #1e2240; border-color: #3a3d6e; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot.ok { background: #4ade80; }
+.dot.error { background: #f87171; }
+.dot.running { background: #fbbf24; animation: blink 1s infinite; }
+.dot.unknown { background: #444; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.pi-item-info { flex: 1; min-width: 0; }
+.pi-item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pi-item-ip { font-size: 11px; color: #666; }
+.sidebar-foot { padding: 10px; border-top: 1px solid #1e2132; }
+.add-pi-btn { width: 100%; padding: 9px; background: transparent; border: 1px dashed #3a3d6e; border-radius: 8px; color: #7c8cff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.add-pi-btn:hover { background: #1e2240; border-style: solid; }
+
+/* Main */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar { padding: 16px 24px; border-bottom: 1px solid #1e2132; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.topbar h2 { font-size: 15px; font-weight: 600; }
+.topbar-sub { font-size: 12px; color: #555; }
+.content { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-content: start; }
+
+/* Cards */
+.card { background: #13151f; border: 1px solid #1e2132; border-radius: 12px; padding: 18px; }
+.card-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #555; margin-bottom: 14px; font-weight: 600; }
+.full-width { grid-column: 1 / -1; }
+
+/* Status */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { background: #0f1117; border-radius: 8px; padding: 12px; }
+.stat-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+.stat-val { font-size: 14px; font-weight: 600; }
+.stat-val.good { color: #4ade80; }
+.stat-val.bad { color: #f87171; }
+.stat-val.neutral { color: #a0a0ff; }
+.stat-val.small { font-size: 12px; }
+.bar-wrap { margin-top: 6px; height: 3px; background: #1e2132; border-radius: 2px; overflow: hidden; }
+.bar-fill { height: 100%; background: #7c8cff; border-radius: 2px; transition: width .5s; }
+.bar-fill.warn { background: #fbbf24; }
+.bar-fill.danger { background: #f87171; }
+
+/* Buttons */
+.btn { padding: 9px 16px; border-radius: 7px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: #7c8cff; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #6a7aee; }
+.btn-ghost { background: #1e2132; color: #ccc; border: 1px solid #2a2d45; }
+.btn-ghost:hover:not(:disabled) { background: #262940; }
+.btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+.btn-danger:hover:not(:disabled) { background: #991b1b; }
+.btn-success { background: #14532d; color: #86efac; border: 1px solid #166534; }
+.btn-success:hover:not(:disabled) { background: #166534; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Mode toggle */
+.mode-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.mode-opt { flex: 1; padding: 9px 8px; border-radius: 8px; border: 1px solid #1e2132; background: #0f1117; color: #666; cursor: pointer; font-size: 11px; text-align: center; transition: all 0.15s; line-height: 1.4; }
+.mode-opt.active { border-color: #7c8cff; color: #a0b0ff; background: #13172e; }
+.mode-opt span { display: block; font-size: 13px; }
+
+/* Form */
+.fg { margin-bottom: 12px; }
+.fg label { font-size: 11px; color: #666; display: block; margin-bottom: 4px; }
+.fg input, .fg select, .fg textarea {
+    width: 100%; background: #0f1117; border: 1px solid #1e2132; border-radius: 7px;
+    padding: 8px 10px; color: #e0e0e0; font-size: 13px; font-family: inherit;
+}
+.fg input:focus, .fg select:focus, .fg textarea:focus { outline: none; border-color: #7c8cff; }
+.fg textarea { resize: vertical; font-family: monospace; }
+.fg-row { display: grid; gap: 10px; }
+.toggle-row { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.toggle-row input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: #7c8cff; }
+
+/* Schedule */
+.sched-opts { transition: opacity .2s; }
+.sched-opts.disabled { opacity: .4; pointer-events: none; }
+
+/* Log */
+.log-wrap { background: #080a10; border-radius: 8px; padding: 12px 14px; height: 320px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11.5px; color: #7ec87e; white-space: pre-wrap; word-break: break-all; }
+.log-wrap div { line-height: 1.5; }
+.log-wrap .err { color: #f87171; }
+.log-wrap .info { color: #7c8cff; }
+.log-wrap .prog { color: #fbbf24; font-weight: 600; background: rgba(251,191,36,.07); border-radius: 4px; padding: 1px 4px; }
+
+/* History */
+.hist-list { list-style: none; }
+.hist-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #1e2132; font-size: 12px; }
+.hist-item:last-child { border-bottom: none; }
+.badge { padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.badge.success { background: #14532d; color: #4ade80; }
+.badge.error { background: #7f1d1d; color: #f87171; }
+.badge.running { background: #78350f; color: #fbbf24; }
+
+/* Empty state */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #444; gap: 14px; text-align: center; grid-column: 1/-1; }
+.empty-icon { font-size: 52px; }
+.empty-text { font-size: 14px; }
+.empty-sub { font-size: 12px; color: #333; }
+
+/* Modal */
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; align-items: center; justify-content: center; }
+.overlay.open { display: flex; }
+.modal { background: #13151f; border: 1px solid #1e2132; border-radius: 14px; padding: 24px; width: 460px; max-height: 85vh; overflow-y: auto; }
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+.modal-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; padding-top: 14px; border-top: 1px solid #1e2132; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2d45; border-radius: 4px; }
+
+.day-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+.day-btn { display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 34px; border-radius: 6px; border: 1px solid #2a2d45;
+  background: #0f1117; color: #666; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .15s; user-select: none; }
+.day-btn input { display: none; }
+.day-btn.selected { background: #7c8cff; border-color: #7c8cff; color: #fff; }
+.day-btn:hover { border-color: #7c8cff; color: #a0b0ff; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-head">
+    <h1>Pi Image Cloner</h1>
+    <p>Raspberry Pi Backup Manager</p>
+  </div>
+  <div class="pi-list" id="piList"></div>
+  <div class="sidebar-foot">
+    <button class="add-pi-btn" onclick="openAdd()">+ Pi hinzufügen</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <h2 id="topTitle">Willkommen</h2>
+      <div class="topbar-sub" id="topSub">Wähle einen Pi aus der Liste</div>
+    </div>
+  </div>
+  <div class="content" id="content">
+    <div class="empty">
+      <div class="empty-icon">🍓</div>
+      <div class="empty-text">Noch kein Pi ausgewählt</div>
+      <div class="empty-sub">Füge einen Pi hinzu oder wähle einen aus der linken Liste</div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h3 id="modalTitle">Pi hinzufügen</h3>
+    <input type="hidden" id="editId">
+    <div class="fg"><label>Name *</label><input id="fName" placeholder="z.B. Docker-Pi"></div>
+    <div class="fg-row" style="grid-template-columns: 1fr 70px;">
+      <div class="fg"><label>IP-Adresse *</label><input id="fIp" placeholder="192.168.1.201"></div>
+      <div class="fg"><label>Port</label><input id="fPort" type="number" value="22"></div>
+    </div>
+    <div class="fg-row" style="grid-template-columns: 1fr 1fr;">
+      <div class="fg"><label>Benutzername *</label><input id="fUser" placeholder="pi"></div>
+      <div class="fg"><label>Passwort *</label><input id="fPw" type="password" placeholder="••••••"></div>
+    </div>
+    <div class="fg"><label>Backup-Gerät</label><input id="fDev" value="/dev/sda" placeholder="/dev/sda"></div>
+    <div class="fg">
+      <label>Ausschlüsse (ein Pfad pro Zeile)</label>
+      <textarea id="fExcl" rows="4" placeholder="/home/pi/deemix/downloads/*&#10;/home/pi/deemix/music/*"></textarea>
+      <div style="font-size:10px;color:#555;margin-top:4px;">Pfad mit /* = Ordner bleibt, Inhalt wird nicht kopiert</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="savePi()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let pis = [];
+let selId = null;
+let safeMode = false;
+let backupEs = null;
+let verifyEs = null;
+let logStreaming = false;
+
+async function refresh() {
+  const res = await fetch('/api/pis');
+  pis = await res.json();
+  renderList();
+  if (selId) {
+    const pi = pis.find(p => p.id === selId);
+    if (pi) {
+      updateDetail(pi);
+      loadHistory(pi.id);
+    }
+  }
+}
+
+function renderList() {
+  const el = document.getElementById('piList');
+  if (!pis.length) {
+    el.innerHTML = '<div style="padding:16px;color:#444;font-size:12px;text-align:center">Noch kein Pi hinzugefügt</div>';
+    return;
+  }
+  el.innerHTML = pis.map(pi => {
+    let dot = 'unknown';
+    if (pi.is_running) dot = 'running';
+    else if (pi.last_backup?.status === 'success') dot = 'ok';
+    else if (pi.last_backup?.status === 'error') dot = 'error';
+    return `<div class="pi-item${pi.id===selId?' active':''}" onclick="selectPi(${pi.id})">
+      <div class="dot ${dot}"></div>
+      <div class="pi-item-info">
+        <div class="pi-item-name">${esc(pi.name)}</div>
+        <div class="pi-item-ip">${esc(pi.ip)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectPi(id) {
+  selId = id;
+  renderList();
+  const pi = pis.find(p => p.id === id);
+  document.getElementById('topTitle').textContent = pi.name;
+  document.getElementById('topSub').textContent = pi.ip + ' · ' + pi.backup_device;
+  renderDetail(pi);
+  // Auto-connect to live log if backup is running
+  if (pi.is_running && !backupEs) {
+    openBackupStream(pi.id);
+  }
+}
+
+function renderDetail(pi) {
+  const lb = pi.last_backup;
+  const lbText = lb ? fmtDate(lb.started_at) : 'Noch kein Backup';
+  const lbDur = lb?.duration_seconds ? ' · ' + fmtDur(lb.duration_seconds) : '';
+  const lbClass = lb?.status === 'success' ? 'good' : lb?.status === 'error' ? 'bad' : 'neutral';
+
+  document.getElementById('content').innerHTML = `
+    <!-- Status -->
+    <div class="card">
+      <div class="card-title">Status</div>
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">Letztes Backup</div>
+          <div class="stat-val small ${lbClass}">${lbText}${lbDur}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Nächstes Backup</div>
+          <div class="stat-val small neutral">${pi.next_run || '—'}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="loadSizes(${pi.id})">
+          📊 Speicher laden
+        </button>
+        <div id="sizesBox" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- Backup -->
+    <div class="card">
+      <div class="card-title">Backup starten</div>
+      <div class="mode-row">
+        <div class="mode-opt${!safeMode?' active':''}" onclick="setMode(false)">
+          <span>⚡</span>Live<br><small style="color:#555">Container laufen weiter</small>
+        </div>
+        <div class="mode-opt${safeMode?' active':''}" onclick="setMode(true)">
+          <span>🛡</span>Sicher<br><small style="color:#555">Container Stop → Backup → Start</small>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnBackup" onclick="startBackup(${pi.id})" ${pi.is_running?'disabled':''}>
+          ${pi.is_running ? '⏳ Läuft…' : '▶ Backup starten'}
+        </button>
+        <button class="btn btn-ghost" onclick="startVerify(${pi.id})">🔍 Verifizieren</button>
+        <button class="btn btn-ghost" id="btnImage" onclick="downloadImage(${pi.id})" ${pi.is_running?'disabled':''} title="Ganzes SD-Image als .img.gz herunterladen">📥 Image</button>
+        <button class="btn btn-ghost" onclick="openEdit(${pi.id})">⚙ Einstellungen</button>
+        <button class="btn btn-danger" onclick="delPi(${pi.id})" style="margin-left:auto">🗑</button>
+      </div>
+    </div>
+
+    <!-- Zeitplan -->
+    <div class="card">
+      <div class="card-title">Zeitplan</div>
+      <div class="fg">
+        <label class="toggle-row">
+          <input type="checkbox" id="schedOn" ${pi.schedule_enabled?'checked':''} onchange="toggleSched()">
+          Automatisches Backup aktivieren
+        </label>
+      </div>
+      <div class="sched-opts${!pi.schedule_enabled?' disabled':''}" id="schedOpts">
+        <div class="fg">
+          <label>Häufigkeit</label>
+          <select id="schedFreq" onchange="freqChange()">
+            <option value="daily"   ${cronPreset(pi.schedule_cron)==='daily'   ?'selected':''}>Täglich</option>
+            <option value="weekly"  ${cronPreset(pi.schedule_cron)==='weekly'  ?'selected':''}>Wöchentlich</option>
+            <option value="monthly" ${cronPreset(pi.schedule_cron)==='monthly' ?'selected':''}>Monatlich (1. des Monats)</option>
+            <option value="once"    ${cronPreset(pi.schedule_cron)==='once'    ?'selected':''}>Einmalig (bestimmtes Datum)</option>
+          </select>
+        </div>
+        <div class="fg" id="schedDayFg" style="${cronPreset(pi.schedule_cron)==='weekly'?'':'display:none'}">
+          <label>Wochentage</label>
+          <div class="day-picker" id="dayPicker">
+            ${['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>{
+              const val = [1,2,3,4,5,6,0][i];
+              const sel = cronDays(pi.schedule_cron).includes(String(val));
+              return '<label class="day-btn'+(sel?' selected':'')+'" onclick="toggleDay(this)"><input type="checkbox" value="'+val+'"'+(sel?' checked':'')+'>'+d+'</label>';
+            }).join('')}
+          </div>
+        </div>
+        <div class="fg" id="schedTimeFg" style="${cronPreset(pi.schedule_cron)==='once'?'display:none':''}">
+          <label>Uhrzeit</label>
+          <input type="time" id="schedTime" value="${cronTime(pi.schedule_cron)}">
+        </div>
+        <div class="fg" id="schedDateFg" style="${cronPreset(pi.schedule_cron)==='once'?'':'display:none'}">
+          <label>Datum</label>
+          <input type="date" id="schedDate" value="${cronOnceDate(pi.schedule_cron)}">
+        </div>
+        <div class="fg" id="schedTimeOnceFg" style="${cronPreset(pi.schedule_cron)==='once'?'':'display:none'}">
+          <label>Uhrzeit</label>
+          <input type="time" id="schedTimeOnce" value="${cronOnceTime(pi.schedule_cron)}">
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="saveSchedule(${pi.id})">
+          Zeitplan speichern
+        </button>
+      </div>
+    </div>
+
+    <!-- Verlauf -->
+    <div class="card">
+      <div class="card-title">Verlauf</div>
+      <ul class="hist-list" id="histList"><li style="color:#444;font-size:12px">Wird geladen…</li></ul>
+    </div>
+
+    <!-- Log -->
+    <div class="card full-width">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Log</span>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="clearLog()">Leeren</button>
+      </div>
+      <div class="log-wrap" id="logBox"><div style="color:#444">Starte ein Backup oder eine Verifikation…</div></div>
+    </div>
+  `;
+
+  loadHistory(pi.id);
+}
+
+function updateDetail(pi) {
+  const lb = pi.last_backup;
+  const lbText = lb ? fmtDate(lb.started_at) : 'Noch kein Backup';
+  const lbDur = lb?.duration_seconds ? ' · ' + fmtDur(lb.duration_seconds) : '';
+  const lbClass = lb?.status === 'success' ? 'good' : lb?.status === 'error' ? 'bad' : 'neutral';
+  const lbEl = document.querySelector('.stat-val.small.' + lbClass) || document.querySelector('.stat-val.small');
+  if (lbEl) lbEl.textContent = lbText + lbDur;
+  const nrEl = document.querySelector('.stat-val.small.neutral');
+  if (nrEl) nrEl.textContent = pi.next_run || '—';
+  const btn = document.getElementById('btnBackup');
+  if (btn) {
+    btn.disabled = pi.is_running;
+    btn.textContent = pi.is_running ? '⏳ Läuft…' : '▶ Backup starten';
+  }
+  const btnImg = document.getElementById('btnImage');
+  if (btnImg) btnImg.disabled = pi.is_running;
+}
+
+// --- Sizes ---
+async function loadSizes(id) {
+  const box = document.getElementById('sizesBox');
+  box.innerHTML = '<span style="color:#555;font-size:12px">Wird geladen…</span>';
+  const res = await fetch(`/api/pis/${id}/sizes`);
+  const data = await res.json();
+  if (data.error) { box.innerHTML = `<span style="color:#f87171;font-size:12px">${esc(data.error)}</span>`; return; }
+  box.innerHTML = `<pre style="font-size:11px;color:#8899cc;line-height:1.6;white-space:pre-wrap">${esc(data.lsblk)}</pre>`;
+}
+
+// --- Backup ---
+function setMode(safe) {
+  safeMode = safe;
+  document.querySelectorAll('.mode-opt').forEach((el, i) => el.classList.toggle('active', i === (safe?1:0)));
+}
+
+async function startBackup(piId) {
+  clearLog();
+  appendLog('Backup wird gestartet…');
+  const res = await fetch(`/api/pis/${piId}/backup?safe_mode=${safeMode}`, { method: 'POST' });
+  if (!res.ok) { const e = await res.json(); appendLog('FEHLER: ' + e.detail); return; }
+  openBackupStream(piId);
+  await refresh();
+}
+
+function openBackupStream(piId) {
+  if (backupEs) backupEs.close();
+  logStreaming = true;
+  backupEs = new EventSource(`/api/pis/${piId}/backup/stream`);
+  backupEs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.line !== undefined) appendLog(d.line);
+    if (d.done) { backupEs.close(); backupEs = null; logStreaming = false; refresh(); }
+  };
+  backupEs.onerror = () => { backupEs.close(); backupEs = null; logStreaming = false; };
+}
+
+// --- Image Download ---
+function downloadImage(piId) {
+  const pi = pis.find(p => p.id === piId);
+  if (pi && pi.is_running) {
+    showToast('Backup läuft gerade – bitte erst warten', true);
+    return;
+  }
+  showToast('Image-Download wird gestartet… (grosse Datei, dauert einige Minuten)');
+  const a = document.createElement('a');
+  a.href = `/api/pis/${piId}/image`;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// --- Verify ---
+async function startVerify(piId) {
+  clearLog();
+  appendLog('Verifikation wird gestartet…');
+  await fetch(`/api/pis/${piId}/verify/start`, { method: 'POST' });
+  openVerifyStream(piId);
+}
+
+function openVerifyStream(piId) {
+  if (verifyEs) verifyEs.close();
+  logStreaming = true;
+  verifyEs = new EventSource(`/api/pis/${piId}/verify/stream`);
+  verifyEs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.line !== undefined) appendLog(d.line);
+    if (d.done) { verifyEs.close(); verifyEs = null; logStreaming = false; }
+  };
+  verifyEs.onerror = () => { verifyEs.close(); verifyEs = null; logStreaming = false; };
+}
+
+// --- Log helpers ---
+function clearLog() {
+  const el = document.getElementById('logBox');
+  if (el) el.innerHTML = '';
+}
+
+function appendLog(txt) {
+  const el = document.getElementById('logBox');
+  if (!el) return;
+
+  // Progress lines: update in place while streaming, append when showing history
+  const isProgress = txt.includes('[FORTSCHRITT]');
+  if (isProgress && logStreaming) {
+    let progEl = el.querySelector('.prog-sticky');
+    if (!progEl) {
+      progEl = document.createElement('div');
+      progEl.className = 'prog prog-sticky';
+      el.appendChild(progEl);
+    }
+    progEl.textContent = txt;
+    el.scrollTop = el.scrollHeight;
+    return;
+  }
+
+  const line = document.createElement('div');
+  if (isProgress) line.className = 'prog';
+  line.textContent = txt;
+
+  // Insert new lines before the sticky progress bar if present
+  const sticky = el.querySelector('.prog-sticky');
+  if (sticky) {
+    el.insertBefore(line, sticky);
+  } else {
+    el.appendChild(line);
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+// --- History ---
+async function loadHistory(piId) {
+  const res = await fetch(`/api/pis/${piId}/backups`);
+  const rows = await res.json();
+  const el = document.getElementById('histList');
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<li style="color:#444;font-size:12px">Noch kein Backup</li>'; return; }
+  el.innerHTML = rows.map(r => `
+    <li class="hist-item">
+      <span class="badge ${r.status}">${r.status==='success'?'✓':r.status==='error'?'✗':'⏳'}</span>
+      <span style="flex:1">${fmtDate(r.started_at)}</span>
+      <span style="color:#555">${fmtDur(r.duration_seconds)}</span>
+    </li>`).join('');
+}
+
+// --- Schedule ---
+function toggleSched() {
+  const on = document.getElementById('schedOn').checked;
+  document.getElementById('schedOpts').classList.toggle('disabled', !on);
+}
+function freqChange() {
+  const v = document.getElementById('schedFreq').value;
+  document.getElementById('schedDayFg').style.display      = v === 'weekly' ? '' : 'none';
+  document.getElementById('schedTimeFg').style.display     = v === 'once'   ? 'none' : '';
+  document.getElementById('schedDateFg').style.display     = v === 'once'   ? '' : 'none';
+  document.getElementById('schedTimeOnceFg').style.display = v === 'once'   ? '' : 'none';
+}
+function toggleDay(label) {
+  label.classList.toggle('selected');
+  const cb = label.querySelector('input');
+  cb.checked = !cb.checked;
+}
+async function saveSchedule(piId) {
+  const on   = document.getElementById('schedOn').checked;
+  const freq = document.getElementById('schedFreq').value;
+  let cron;
+  if (freq === 'daily') {
+    const [h, m] = document.getElementById('schedTime').value.split(':');
+    cron = `${m} ${h} * * *`;
+  } else if (freq === 'weekly') {
+    const [h, m] = document.getElementById('schedTime').value.split(':');
+    const days = [...document.querySelectorAll('#dayPicker input:checked')].map(c => c.value);
+    if (!days.length) { showToast('Bitte mindestens einen Wochentag wählen', true); return; }
+    cron = `${m} ${h} * * ${days.join(',')}`;
+  } else if (freq === 'monthly') {
+    const [h, m] = document.getElementById('schedTime').value.split(':');
+    cron = `${m} ${h} 1 * *`;
+  } else if (freq === 'once') {
+    const date = document.getElementById('schedDate').value;
+    const time = document.getElementById('schedTimeOnce').value;
+    if (!date || !time) { showToast('Bitte Datum und Uhrzeit angeben', true); return; }
+    cron = `once:${date}T${time}`;
+  }
+  const pi = pis.find(p => p.id === piId);
+  const res = await fetch(`/api/pis/${piId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...pi, password: '', schedule_enabled: on, schedule_cron: cron })
+  });
+  if (res.ok) { await refresh(); showToast('Zeitplan gespeichert'); }
+  else showToast('Fehler beim Speichern', true);
+}
+
+// --- CRUD Modal ---
+function openAdd() {
+  document.getElementById('modalTitle').textContent = 'Pi hinzufügen';
+  document.getElementById('editId').value = '';
+  ['fName','fIp','fUser','fPw','fExcl'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('fPort').value = '22';
+  document.getElementById('fDev').value = '/dev/sda';
+  document.getElementById('overlay').classList.add('open');
+}
+function openEdit(id) {
+  const pi = pis.find(p => p.id === id);
+  document.getElementById('modalTitle').textContent = 'Pi bearbeiten';
+  document.getElementById('editId').value = id;
+  document.getElementById('fName').value = pi.name;
+  document.getElementById('fIp').value = pi.ip;
+  document.getElementById('fPort').value = pi.port;
+  document.getElementById('fUser').value = pi.user;
+  document.getElementById('fPw').value = '';
+  document.getElementById('fDev').value = pi.backup_device;
+  document.getElementById('fExcl').value = pi.excludes || '';
+  document.getElementById('overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('overlay').classList.remove('open'); }
+
+async function savePi() {
+  const id = document.getElementById('editId').value;
+  const pw = document.getElementById('fPw').value;
+  const name = document.getElementById('fName').value.trim();
+  const ip = document.getElementById('fIp').value.trim();
+  const user = document.getElementById('fUser').value.trim();
+  if (!name || !ip || !user || (!id && !pw)) { showToast('Bitte alle Pflichtfelder (*) ausfüllen', true); return; }
+
+  const body = {
+    name, ip, user,
+    port: parseInt(document.getElementById('fPort').value) || 22,
+    password: pw,
+    backup_device: document.getElementById('fDev').value || '/dev/sda',
+    excludes: document.getElementById('fExcl').value,
+    schedule_enabled: false,
+    schedule_cron: '0 3 * * *',
+    safe_mode: false,
+  };
+
+  const res = await fetch(id ? `/api/pis/${id}` : '/api/pis', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (res.ok) {
+    closeModal();
+    await refresh();
+    if (!id) { const r = await res.json(); selectPi(r.id); }
+    showToast(id ? 'Gespeichert' : 'Pi hinzugefügt');
+  } else {
+    const e = await res.json().catch(() => ({}));
+    showToast('Fehler: ' + (e.detail || 'Unbekannt'), true);
+  }
+}
+
+async function delPi(id) {
+  if (!confirm('Pi wirklich löschen? Alle Backup-Einträge werden entfernt.')) return;
+  await fetch(`/api/pis/${id}`, { method: 'DELETE' });
+  selId = null;
+  await refresh();
+  document.getElementById('topTitle').textContent = 'Willkommen';
+  document.getElementById('topSub').textContent = 'Wähle einen Pi aus der Liste';
+  document.getElementById('content').innerHTML = `
+    <div class="empty">
+      <div class="empty-icon">🍓</div>
+      <div class="empty-text">Pi wurde entfernt</div>
+    </div>`;
+}
+
+// --- Helpers ---
+function cronPreset(c) {
+  if (!c) return 'daily';
+  if (c.startsWith('once:')) return 'once';
+  const p = c.split(' ');
+  if (p[4]==='*' && p[3]==='*' && p[2]==='*') return 'daily';
+  if (p[4]!=='*' && p[3]==='*' && p[2]==='*') return 'weekly';
+  if (p[4]==='*' && p[3]==='*' && p[2]==='1') return 'monthly';
+  return 'daily';
+}
+function cronDays(c) {
+  if (!c || c.startsWith('once:')) return [];
+  const p = c.split(' ');
+  return (p[4] && p[4] !== '*') ? p[4].split(',') : [];
+}
+function cronOnceDate(c) {
+  if (!c || !c.startsWith('once:')) return '';
+  return c.slice(5, 15);
+}
+function cronOnceTime(c) {
+  if (!c || !c.startsWith('once:')) return '03:00';
+  return c.length >= 21 ? c.slice(16, 21) : '03:00';
+}
+function cronTime(c) {
+  if (!c) return '03:00';
+  const p = c.split(' ');
+  return p[1].padStart(2,'0') + ':' + p[0].padStart(2,'0');
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s.replace(' ','T'));
+  return d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function fmtDur(s) {
+  if (!s) return '';
+  if (s < 60) return s + 's';
+  return Math.floor(s/60) + 'm ' + (s%60) + 's';
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showToast(msg, err=false) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; Object.assign(t.style,{position:'fixed',bottom:'24px',right:'24px',padding:'10px 18px',borderRadius:'8px',fontSize:'13px',fontWeight:'500',zIndex:'999',transition:'opacity .3s'}); document.body.appendChild(t); }
+  t.textContent = msg;
+  t.style.background = err ? '#7f1d1d' : '#14532d';
+  t.style.color = err ? '#fca5a5' : '#86efac';
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.opacity = '0', 3000);
+}
+
+document.getElementById('overlay').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
+
+refresh();
+setInterval(refresh, 8000);
+</script>
+</body>
+</html>

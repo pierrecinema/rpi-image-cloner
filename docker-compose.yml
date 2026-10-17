@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  rpi-image-cloner:
+    image: rpi-image-cloner:latest
+    # Or build from source:
+    # build: .
+    container_name: rpi-image-cloner
+    ports:
+      - "8099:8000"
+    volumes:
+      - rpi_cloner_data:/app/data
+    environment:
+      - TZ=Europe/Zurich      # Change to your timezone
+    restart: unless-stopped
+
+volumes:
+  rpi_cloner_data:
