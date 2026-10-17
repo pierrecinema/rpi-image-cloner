@@ -25,7 +25,7 @@ async def lifespan(app):
     scheduler.shutdown()
 
 
-app = FastAPI(title="Raspberry Pi Image Cloner", redirect_slashes=False, lifespan=lifespan)
+app = FastAPI(title="Raspberry Pi Image Cloner", version="1.18.0", redirect_slashes=False, lifespan=lifespan)
 
 
 # --- Models ---
@@ -142,6 +142,20 @@ async def start_backup(pi_id: int, safe_mode: bool = False):
     if not ok:
         raise HTTPException(400, result)
     return {"backup_id": result}
+
+
+@app.delete("/api/pis/{pi_id}/backup")
+async def cancel_backup(pi_id: int):
+    if pi_id not in active_backups:
+        raise HTTPException(400, "Kein Backup läuft")
+    active_backups[pi_id]['cancel'] = True
+    chan = active_backups[pi_id].get('chan')
+    if chan:
+        try:
+            chan.close()
+        except Exception:
+            pass
+    return {"ok": True}
 
 
 @app.get("/api/pis/{pi_id}/backup/stream")

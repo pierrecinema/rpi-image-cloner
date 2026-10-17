@@ -235,6 +235,10 @@ function renderList() {
 }
 
 function selectPi(id) {
+  if (selId !== id) {
+    if (backupEs) { backupEs.close(); backupEs = null; logStreaming = false; }
+    if (verifyEs) { verifyEs.close(); verifyEs = null; }
+  }
   selId = id;
   renderList();
   const pi = pis.find(p => p.id === id);
@@ -290,6 +294,7 @@ function renderDetail(pi) {
         <button class="btn btn-primary" id="btnBackup" onclick="startBackup(${pi.id})" ${pi.is_running?'disabled':''}>
           ${pi.is_running ? '⏳ Läuft…' : '▶ Backup starten'}
         </button>
+        ${pi.is_running ? `<button class="btn btn-danger" id="btnAbort" onclick="abortBackup(${pi.id})">⏹ Abbrechen</button>` : ''}
         <button class="btn btn-ghost" onclick="startVerify(${pi.id})">🔍 Verifizieren</button>
         <button class="btn btn-ghost" id="btnImage" onclick="downloadImage(${pi.id})" ${pi.is_running?'disabled':''} title="Ganzes SD-Image als .img.gz herunterladen">📥 Image</button>
         <button class="btn btn-ghost" onclick="openEdit(${pi.id})">⚙ Einstellungen</button>
@@ -302,7 +307,7 @@ function renderDetail(pi) {
       <div class="card-title">Zeitplan</div>
       <div class="fg">
         <label class="toggle-row">
-          <input type="checkbox" id="schedOn" ${pi.schedule_enabled?'checked':''} onchange="toggleSched()">
+          <input type="checkbox" id="schedOn" ${pi.schedule_enabled?'checked':''} onchange="toggleSchedAndSave(${pi.id})">
           Automatisches Backup aktivieren
         </label>
       </div>
@@ -322,7 +327,7 @@ function renderDetail(pi) {
             ${['Mo','Di','Mi','Do','Fr','Sa','So'].map((d,i)=>{
               const val = [1,2,3,4,5,6,0][i];
               const sel = cronDays(pi.schedule_cron).includes(String(val));
-              return '<label class="day-btn'+(sel?' selected':'')+'" onclick="toggleDay(this)"><input type="checkbox" value="'+val+'"'+(sel?' checked':'')+'>'+d+'</label>';
+              return '<label class="day-btn'+(sel?' selected':'')+'" onclick="toggleDay(this,event)"><input type="checkbox" value="'+val+'"'+(sel?' checked':'')+'>'+d+'</label>';
             }).join('')}
           </div>
         </div>
@@ -376,6 +381,17 @@ function updateDetail(pi) {
   if (btn) {
     btn.disabled = pi.is_running;
     btn.textContent = pi.is_running ? '⏳ Läuft…' : '▶ Backup starten';
+    const existingAbort = document.getElementById('btnAbort');
+    if (pi.is_running && !existingAbort) {
+      const abortBtn = document.createElement('button');
+      abortBtn.id = 'btnAbort';
+      abortBtn.className = 'btn btn-danger';
+      abortBtn.textContent = '⏹ Abbrechen';
+      abortBtn.onclick = () => abortBackup(pi.id);
+      btn.insertAdjacentElement('afterend', abortBtn);
+    } else if (!pi.is_running && existingAbort) {
+      existingAbort.remove();
+    }
   }
   const btnImg = document.getElementById('btnImage');
   if (btnImg) btnImg.disabled = pi.is_running;
@@ -404,6 +420,18 @@ async function startBackup(piId) {
   if (!res.ok) { const e = await res.json(); appendLog('FEHLER: ' + e.detail); return; }
   openBackupStream(piId);
   await refresh();
+}
+
+async function abortBackup(piId) {
+  if (!confirm('Backup wirklich abbrechen?')) return;
+  const res = await fetch(`/api/pis/${piId}/backup`, { method: 'DELETE' });
+  if (res.ok) {
+    appendLog('[INFO] Abbruch-Signal gesendet…');
+    showToast('Backup wird abgebrochen…');
+  } else {
+    const e = await res.json().catch(() => ({}));
+    showToast('Fehler: ' + (e.detail || 'Unbekannt'), true);
+  }
 }
 
 function openBackupStream(piId) {
@@ -499,18 +527,25 @@ async function loadHistory(piId) {
   const el = document.getElementById('histList');
   if (!el) return;
   if (!rows.length) { el.innerHTML = '<li style="color:#444;font-size:12px">Noch kein Backup</li>'; return; }
-  el.innerHTML = rows.map(r => `
-    <li class="hist-item">
-      <span class="badge ${r.status}">${r.status==='success'?'✓':r.status==='error'?'✗':'⏳'}</span>
+  el.innerHTML = rows.map(r => {
+    const badgeClass = r.status === 'success' ? 'success' : r.status === 'running' ? 'running' : 'error';
+    const badgeIcon = r.status === 'success' ? '✓' : r.status === 'running' ? '⏳' : r.status === 'cancelled' ? '✕' : '✗';
+    return `<li class="hist-item">
+      <span class="badge ${badgeClass}">${badgeIcon}</span>
       <span style="flex:1">${fmtDate(r.started_at)}</span>
       <span style="color:#555">${fmtDur(r.duration_seconds)}</span>
-    </li>`).join('');
+    </li>`;
+  }).join('');
 }
 
 // --- Schedule ---
 function toggleSched() {
   const on = document.getElementById('schedOn').checked;
   document.getElementById('schedOpts').classList.toggle('disabled', !on);
+}
+async function toggleSchedAndSave(piId) {
+  toggleSched();
+  await saveSchedule(piId);
 }
 function freqChange() {
   const v = document.getElementById('schedFreq').value;
@@ -519,7 +554,8 @@ function freqChange() {
   document.getElementById('schedDateFg').style.display     = v === 'once'   ? '' : 'none';
   document.getElementById('schedTimeOnceFg').style.display = v === 'once'   ? '' : 'none';
 }
-function toggleDay(label) {
+function toggleDay(label, event) {
+  if (event) event.preventDefault();
   label.classList.toggle('selected');
   const cb = label.querySelector('input');
   cb.checked = !cb.checked;

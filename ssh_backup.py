@@ -241,11 +241,15 @@ def _backup_worker(pi_id, backup_id, pi, safe_mode, log_queue):
         chan = ssh.get_transport().open_session()
         chan.get_pty()
         chan.exec_command(f'echo {_sq(password)} | {cmd}')
+        active_backups[pi_id]['chan'] = chan
 
         buf = b''
         clone_output = []
         while True:
-            chunk = chan.recv(4096)
+            try:
+                chunk = chan.recv(4096)
+            except Exception:
+                chunk = b''
             if not chunk:
                 break
             buf += chunk
@@ -260,22 +264,35 @@ def _backup_worker(pi_id, backup_id, pi, safe_mode, log_queue):
             clone_output.append(decoded)
             log(decoded)
 
-        exit_code = chan.recv_exit_status()
-        clone_aborted = any('Aborting' in l or 'could not unmount' in l for l in clone_output)
+        cancelled = active_backups.get(pi_id, {}).get('cancel', False)
 
-        if safe_mode:
-            log(f"[{_ts()}] Starte Docker Container...")
-            _exec(ssh, password, "docker start $(docker ps -a -q) 2>/dev/null; true", log)
+        if cancelled:
+            try:
+                ssh_kill = _connect(pi, password)
+                _exec_out(ssh_kill, password, "sudo pkill -f rpi-clone 2>/dev/null; true")
+                ssh_kill.close()
+            except Exception:
+                pass
+            log(f"[{_ts()}] Backup abgebrochen")
+            status = 'cancelled'
+        else:
+            exit_code = chan.recv_exit_status()
+            clone_aborted = any('Aborting' in l or 'could not unmount' in l for l in clone_output)
 
-        if exit_code == 0 and not clone_aborted:
-            _fix_boot(ssh, password, device, log)
+            if safe_mode:
+                log(f"[{_ts()}] Starte Docker Container...")
+                _exec(ssh, password, "docker start $(docker ps -a -q) 2>/dev/null; true", log)
+
+            if exit_code == 0 and not clone_aborted:
+                _fix_boot(ssh, password, device, log)
+
+            status = 'success' if (exit_code == 0 and not clone_aborted) else 'error'
+            result_msg = 'erfolgreich abgeschlossen' if exit_code == 0 else f'fehlgeschlagen (Exit {exit_code})'
+            log(f"[{_ts()}] Backup {result_msg}")
+            if exit_code == 0:
+                log_queue.put("[FORTSCHRITT] 100% ▕████████████████████▏ Backup abgeschlossen")
 
         ssh.close()
-        status = 'success' if (exit_code == 0 and not clone_aborted) else 'error'
-        result_msg = 'erfolgreich abgeschlossen' if exit_code == 0 else f'fehlgeschlagen (Exit {exit_code})'
-        log(f"[{_ts()}] Backup {result_msg}")
-        if exit_code == 0:
-            log_queue.put("[FORTSCHRITT] 100% ▕████████████████████▏ Backup abgeschlossen")
 
     except Exception as e:
         log(f"[FEHLER] {e}")
