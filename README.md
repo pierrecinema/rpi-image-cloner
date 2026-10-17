@@ -8,6 +8,17 @@ A web-based tool to clone and backup Raspberry Pi SD cards via SSH — with auto
 
 ---
 
+## How it works
+
+1. The tool connects to your Raspberry Pi via SSH
+2. Starts `rpi-clone` on the Pi (clones the running SD card to a backup card)
+3. Automatically repairs `cmdline.txt` and `fstab` on the backup card (correct PARTUUID)
+4. The backup card is directly bootable — no manual intervention needed
+
+> **Portainer users:** The `docker-compose.yml` can be pasted directly as a stack in Portainer. The volume `rpi_cloner_data` stores the database persistently.
+
+---
+
 ## ✨ Features
 
 - **Automated backups** — weekly schedules via cron, runs while you sleep
