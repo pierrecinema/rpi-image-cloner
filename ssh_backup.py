@@ -233,7 +233,7 @@ def _backup_worker(pi_id, backup_id, pi, safe_mode, log_queue):
 
         device = pi.get('backup_device') or '/dev/sda'
         _exec(ssh, password, 'mountpoint -q /boot/firmware || mount /boot/firmware 2>/dev/null; true', lambda x: None)
-        cmd = f'sudo -S rpi-clone {device} -U -f{exclude_args} 2>&1'
+        cmd = f'ionice -c3 nice -n 19 sudo -S rpi-clone {device} -U -f{exclude_args} 2>&1'
 
         log(f"[{_ts()}] Starte rpi-clone → {device}")
         log("=" * 50)
@@ -243,6 +243,7 @@ def _backup_worker(pi_id, backup_id, pi, safe_mode, log_queue):
         chan.exec_command(f'echo {_sq(password)} | {cmd}')
 
         buf = b''
+        clone_output = []
         while True:
             chunk = chan.recv(4096)
             if not chunk:
@@ -250,22 +251,27 @@ def _backup_worker(pi_id, backup_id, pi, safe_mode, log_queue):
             buf += chunk
             while b'\n' in buf:
                 line, buf = buf.split(b'\n', 1)
-                log(line.decode('utf-8', errors='replace').rstrip())
+                decoded = line.decode('utf-8', errors='replace').rstrip()
+                clone_output.append(decoded)
+                log(decoded)
 
         if buf:
-            log(buf.decode('utf-8', errors='replace').rstrip())
+            decoded = buf.decode('utf-8', errors='replace').rstrip()
+            clone_output.append(decoded)
+            log(decoded)
 
         exit_code = chan.recv_exit_status()
+        clone_aborted = any('Aborting' in l or 'could not unmount' in l for l in clone_output)
 
         if safe_mode:
             log(f"[{_ts()}] Starte Docker Container...")
             _exec(ssh, password, "docker start $(docker ps -a -q) 2>/dev/null; true", log)
 
-        if exit_code == 0:
+        if exit_code == 0 and not clone_aborted:
             _fix_boot(ssh, password, device, log)
 
         ssh.close()
-        status = 'success' if exit_code == 0 else 'error'
+        status = 'success' if (exit_code == 0 and not clone_aborted) else 'error'
         result_msg = 'erfolgreich abgeschlossen' if exit_code == 0 else f'fehlgeschlagen (Exit {exit_code})'
         log(f"[{_ts()}] Backup {result_msg}")
         if exit_code == 0:
